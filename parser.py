@@ -1,5 +1,5 @@
 from tabulate import tabulate
-
+from models import Partition
 
 def get_partitions(disk_location,block_size):
     # Open the file in binary read mode ('rb')
@@ -27,6 +27,7 @@ def get_partitions(disk_location,block_size):
     # Checking if avaliable partitions
     partition_table = (mbr[446:510])
     partition_list = []
+    ptable = [] # A printable table for easier visualization
     ptable_headers = ["Number","Hex","Bootable","File System","Partition Begins At"]
 
     partition_index = 1
@@ -34,6 +35,7 @@ def get_partitions(disk_location,block_size):
         partition = partition_table[i:i+16]
         bootable = False
         file_system = ""
+
 
         # Analizing the partition bytes:
         # - checking if the partition is bootable
@@ -56,21 +58,17 @@ def get_partitions(disk_location,block_size):
 
         # Check if partition is empty (all is =0)
         if not any(partition):
-            partition_list.append([partition_index,"Empty"])
+            ptable.append([partition_index, "Empty"])
         else:
-            partition_list.append([partition_index,partition_hex,bootable,file_system,partition_offset])
+            partition_list.append(Partition(partition_index,partition_hex,bootable,file_system,partition_offset))
+            ptable.append([partition_index,partition_hex,bootable,file_system,partition_offset])
+
         
         partition_index += 1
 
-    print(tabulate(partition_list, headers=ptable_headers, tablefmt="grid"))
+    print(tabulate(ptable, headers=ptable_headers, tablefmt="grid"))
 
     return partition_list
 
 
 
-
-
-
-
-partitions = get_partitions('./fake-ntfs/disk.img',block_size=0x0200) # 0x0200 == 512 bytes
-print(partitions)
