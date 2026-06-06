@@ -1,33 +1,24 @@
 from tabulate import tabulate
-from models import Partition
+from models import Partition,NTFSInfo
 
-def get_partitions(disk_location,block_size):
+def get_partitions(disk,block_size):
     # Open the file in binary read mode ('rb')
-    with open(disk_location, 'rb') as file:
-        # Read exactly 50 bytes from the beginning
-        mbr = file.read(512)
+    # Read exactly 50 bytes from the beginning
+
+    mbr = disk.read(512)
 
     #========== MBR (Master Boot Record) =============
-    print(mbr)
-    print(f"\n=====================")
-
     mbr_signature = (mbr[510:512]).hex()
    
-    print("MBR signature:"+mbr_signature)
-
-    if mbr_signature == "55aa":
-        print("Master Boot Record has been detected.")
-    else:
-         print("Master Boot Record has NOT been detected.")
-
-    print("=====================")
+    if mbr_signature != "55aa":
+        raise ValueError("Invalid MBR signature")
+ 
    
 
-    print(f"\nPartition table:")
     # Checking if avaliable partitions
     partition_table = (mbr[446:510])
-    partition_list = []
-    ptable = [] # A printable table for easier visualization
+    partitions = []
+    ptable_rows = [] # A printable table for easier visualization
     ptable_headers = ["Number","Hex","Bootable","File System","Partition Begins At"]
 
     partition_index = 1
@@ -58,17 +49,63 @@ def get_partitions(disk_location,block_size):
 
         # Check if partition is empty (all is =0)
         if not any(partition):
-            ptable.append([partition_index, "Empty"])
+            ptable_rows.append([partition_index, "Empty"])
         else:
-            partition_list.append(Partition(partition_index,partition_hex,bootable,file_system,partition_offset))
-            ptable.append([partition_index,partition_hex,bootable,file_system,partition_offset])
+            partitions.append(Partition(partition_index,partition_hex,bootable,file_system,partition_offset))
+            ptable_rows.append([partition_index,partition_hex,bootable,file_system,partition_offset])
 
         
         partition_index += 1
 
-    print(tabulate(ptable, headers=ptable_headers, tablefmt="grid"))
+    ptable = (tabulate(ptable_rows, headers=ptable_headers, tablefmt="grid"))
 
-    return partition_list
+    return partitions,ptable,mbr_signature
 
 
+
+
+
+
+
+# This parses the start of a partition to get the start of the MFT
+def parse_partition(partition,disk):
+    partition_location = int(partition.offset,16) 
+
+    disk.seek(partition_location)   # go to offset
+    data = disk.read(512)      
+    #print(data)
+
+    bytes_per_sector = int.from_bytes(data[11:13], byteorder='little')
+    sectors_per_cluster = int.from_bytes(data[13:14], byteorder='little')
+    cluster_size = bytes_per_sector * sectors_per_cluster # bytes
+    partition_size = int.from_bytes(data[0x28:0x30], byteorder='little') * bytes_per_sector
+
+    # Finding MFT offset
+    mft_cluster = int.from_bytes(data[0x30:0x38], "little")
+    mft_offset = mft_cluster * cluster_size
+    mft_location = hex(mft_offset + partition_location)
+
+    
+    
+
+    return NTFSInfo(bytes_per_sector,sectors_per_cluster,cluster_size,partition_size,mft_cluster,mft_offset,mft_location)
+
+
+
+
+
+
+
+def filesystem_info_print(p):
+        # Filesystem information:
+        print(f"Filesystem of Partition information: {p.index}")
+        print(f"Bytes per sector: {p.filesystem.bytes_per_sector}")
+        print(f"Sectors per cluster: {p.filesystem.sectors_per_cluster}")
+        print(f"Cluster size: {p.filesystem.cluster_size}")
+        megabytes = p.filesystem.partition_size / (1024 * 1024)
+        print(f"Partition size: {megabytes:.2f} MB")
+
+        print(f"$MFT starts in {p.filesystem.mft_cluster} clusters.")
+        print(f"$MFT starts {p.filesystem.mft_offset} bytes after the start of the partition")
+        print(f"$MFT Location: {p.filesystem.mft_location}")
 
