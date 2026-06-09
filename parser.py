@@ -230,85 +230,106 @@ def record_parser(record,record_location):
 
 
     offset += offset_to_attribute
-    attribute_header = record[offset:offset+16]
-
-    # Attribute Header 
-    attribute_type = hex(get_int(attribute_header,0x00,0x04))
-    attribute_length_total =  hex(get_int(attribute_header,0x04,0x08))
-    resident_flag =  hex(get_int(attribute_header,0x08,0x9)) # either resident or non-resident flag
-         
     
-    if resident_flag == "0x0":
-        print("Attribute is Resident")
+    
+    while True:
+        attribute_header = record[offset:offset+16]
 
-        # Since its a resident attribute, i now continue to read the header of the resident attribute
-        attribute_header = record[offset:offset+22]
+        if len(attribute_header) < 16:
+                break
 
-        attribute_length = get_int(attribute_header,0x10,0x14)
-        offset_to_metadata = get_int(attribute_header,0x14,0x16)
+        # Attribute Header 
+        attribute_type = hex(get_int(attribute_header,0x00,0x04))
+        attribute_type_int = get_int(attribute_header, 0x00, 0x04)
+
+        attribute_length_total =  get_int(attribute_header,0x04,0x08)
+        resident_flag =  hex(get_int(attribute_header,0x08,0x9)) # either resident or non-resident flag
+
+         # STOP CONDITION (end of attribute list)
+        if attribute_type_int in (0xFFFFFFFF, 0x00000000):
+            break
+
+        if attribute_type not in ("0x10", "0x30", "0x80"):
+            offset += attribute_length_total
+            continue
+
+        if resident_flag == "0x0":
+            print("Attribute is Resident")
+
+            # Since its a resident attribute, i now continue to read the header of the resident attribute
+            attribute_header = record[offset:offset+22]
+
+            attribute_length = get_int(attribute_header,0x10,0x14)
+            offset_to_metadata = get_int(attribute_header,0x14,0x16)
 
 
 
-        base = offset
-        meta_start = base + offset_to_metadata
-        meta_end = meta_start + attribute_length
+            base = offset
+            meta_start = base + offset_to_metadata
+            meta_end = meta_start + attribute_length
 
-        metadata = record[meta_start:meta_end]
-
-
-        # Getting the attribute of STANDARD_INFORMATION
-        if attribute_type == "0x10":
-            file_creation_time =  get_filetime_str(metadata,0x00)
-            file_altered_time = get_filetime_str(metadata,0x08)
-            mft_changed_time = get_filetime_str(metadata,0x10)
-            file_read_time = get_filetime_str(metadata,0x18)
+            metadata = record[meta_start:meta_end]
 
             
 
-            print(f"Magic number: {magic_num}")
-            print(f"Offset to first attribute: {offset_to_attribute} bytes")
-            print(f"Flags: {flags}")
-            print(f"Attribute location: {hex(offset_to_attribute)}")
-            print("Attributes:")
-            print("-----------")
-            print(f"Attribute type: {attribute_type}")
-            print(f"Attribute length total (including this header): {attribute_length_total}")
-            print(f"Resident/None-Resident flags: {resident_flag}")
-            print(f"Offset to metadata of the attribute: {offset_to_metadata}")
-            print(f"File Creation time:{file_creation_time}")
-            print(f"File Altered time:{file_altered_time}")
-            print(f"MFT changed time:{mft_changed_time}")
-            print(f"File Read time:{file_read_time}")
+            # Getting the attribute of STANDARD_INFORMATION
+            if attribute_type == "0x10":
+                file_creation_time =  get_filetime_str(metadata,0x00)
+                file_altered_time = get_filetime_str(metadata,0x08)
+                mft_changed_time = get_filetime_str(metadata,0x10)
+                file_read_time = get_filetime_str(metadata,0x18)
 
-        if attribute_type == "0x30":
-            parent_dir = metadata[0x00:0x08].decode("ascii")
+                
 
+                print(f"Magic number: {magic_num}")
+                print(f"Offset to first attribute: {offset_to_attribute} bytes")
+                print(f"Flags: {flags}")
+                print(f"Attribute location: {hex(offset_to_attribute)}")
+                print("Attributes:")
+                print("-----------")
+                print(f"Attribute type: {attribute_type}")
+                print(f"Attribute length total (including this header): {hex(attribute_length_total)}")
+                print(f"Resident/None-Resident flags: {resident_flag}")
+                print(f"Offset to metadata of the attribute: {offset_to_metadata}")
+                print(f"File Creation time:{file_creation_time}")
+                print(f"File Altered time:{file_altered_time}")
+                print(f"MFT changed time:{mft_changed_time}")
+                print(f"File Read time:{file_read_time}")
 
-
-            print(f"Magic number: {magic_num}")
-            print(f"Offset to first attribute: {offset_to_attribute} bytes")
-            print(f"Flags: {flags}")
-            print(f"Attribute location: {hex(offset_to_attribute)}")
-            print("Attributes:")
-            print("-----------")
-            print(f"Attribute type: {attribute_type}")
-            print(f"Attribute length total (including this header): {attribute_length_total}")
-            print(f"Resident/None-Resident flags: {resident_flag}")
-            print(f"Offset to metadata of the attribute: {offset_to_metadata}")
-            print(f"Parent directory: {parent_dir}")
+            if attribute_type == "0x30":
+                parent_dir = metadata[0x00:0x08]
 
 
 
+                print(f"Magic number: {magic_num}")
+                print(f"Offset to first attribute: {offset_to_attribute} bytes")
+                print(f"Flags: {flags}")
+                print(f"Attribute location: {hex(offset_to_attribute)}")
+                print("Attributes:")
+                print("-----------")
+                print(f"Attribute type: {attribute_type}")
+                print(f"Attribute length total (including this header): {hex(attribute_length_total)}")
+                print(f"Resident/None-Resident flags: {resident_flag}")
+                print(f"Offset to metadata of the attribute: {offset_to_metadata}")
+                print(f"Parent directory: {parent_dir}")
 
 
-            print(f"META OFFSET:{metadata}")
-            print(meta_start)
-            print(meta_end)
 
-        
-    else:
-        print("Attribute is NOT Resident")
 
+
+                print(f"META OFFSET:{metadata}")
+                print(meta_start)
+                print(meta_end)
+
+            
+        else:
+            print("Attribute is NOT Resident")
+
+        # MOVE TO NEXT ATTRIBUTE
+        if attribute_length_total == 0:
+            break
+
+        offset += attribute_length_total
 
     
     #print(get_bytes(metadata,0x00,0x08))
