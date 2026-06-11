@@ -1,5 +1,5 @@
 from tabulate import tabulate
-from models import Partition,NTFSInfo
+from models import Partition,NTFSInfo,MFTRecord,StandardInformation,FileNameAttribute
 import struct 
 from datetime import datetime, timedelta
 
@@ -116,6 +116,8 @@ def get_mft_records(partition,disk):
 
     record_index = 0
 
+    records = []
+
     while record_index<4:
         record_location = mft_location + 1024 * record_index
         print()
@@ -123,19 +125,20 @@ def get_mft_records(partition,disk):
 
         disk.seek(record_location)
         data = disk.read(1024) # Read exactly one record     
-        #print(data)
-        record_parser(data,record_location)
+        
+
+        records.append(record_parser(data,record_index,record_location))
         print()
         record_index+=1
+    return records 
 
 
-def record_parser(record,record_location):
+def record_parser(record,record_index,record_location):
     def get_int(data,fro,to):
         return int.from_bytes(data[fro:to], "little")
 
     def get_bytes(data,fro,to):
         return data[fro:to]
-
 
     
     def get_filetime_str(data, start):
@@ -147,75 +150,11 @@ def record_parser(record,record_location):
         dt = datetime(1601, 1, 1) + timedelta(microseconds=ft / 10)
         return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    # Values of different types of attributes (offsets)
-    record_attr = {
-        "$STANDARD_INFORMATION": {
-            "values": {
-                "file_creation": (0x00,0x08), 
-                "file_altered": (0x08,0x10), 
-                "mft_changed":(0x10,0x18), 
-                "file_read": (0x18,0x20),
-                "file_permissions":(0x20,0x24)
-            },
-            # file permission flags
-            "flags":{ 
-                "read_only": 0x0001,
-                "hidden": 0x0002,
-                "system":0x0004,
-                "archive":0x0020,
-                "device":0x0040,
-                "normal":0x0080,
-                "tenporary":0x0100,
-                "sparse_file":0x0200,
-                "reparse_point":0x0400,
-                "compressed":0x0800,
-                "offline":0x1000,
-                "not_content_indexed":0x2000,
-                "enctypted":0x4000
-            }
-        },
-        "$FILENAME":
-        {
-            "values":{
-                "parent_dir": (0x00,0x08),
-                "file_creation": (0x08,0x10),
-                "file_altered": (0x10,0x18),
-                "mft_changed":(0x18,0x20), 
-                "file_read": (0x20,0x28),
-                "allocated_size_file": (0x28,0x30),
-                "real_size_file":(0x30,0x38),
-                "flags":(0x38,0x3c),
-                "filename_len":(0x40,0x41),
-                "filename": ("rest", 0x42) # Till L
-            },
-            # file flags
-            "flags":{
-                "read_only": 0x0001,
-                "hidden": 0x0002,
-                "system":0x0004,
-                "archive":0x0020,
-                "device":0x0040,
-                "normal":0x0080,
-                "tenporary":0x0100,
-                "sparse_file":0x0200,
-                "reparse_point":0x0400,
-                "compressed":0x0800,
-                "offline":0x1000,
-                "not_content_indexed":0x2000,
-                "enctypted":0x4000,
-                "directory":0x10000000,
-                "index_view":0x20000000
-            }
-        },
-        "$DATA": {
-            "values":{
-                "data":(0x00) # Till end of data
-            }
-        }
-    }
-
-
-
+    
+    record_obj = MFTRecord(
+            record_number=record_index,
+            record_location=record_location
+    )
 
     offset = 0
     record_header = record[offset:offset+42]
@@ -226,7 +165,8 @@ def record_parser(record,record_location):
     offset_to_attribute = int.from_bytes(record_header[0x14:0x16], "little")
     flags = int.from_bytes(record_header[0x16:0x18], "little") # 0 = deleted file , 1 = active file , 2 = deleted directory , 3 active directory , 4/8 = none standard
     
-    
+    record_obj.magic_num=magic_num
+    record_obj.flags=flags
 
 
     offset += offset_to_attribute
@@ -254,7 +194,7 @@ def record_parser(record,record_location):
             continue
 
         if resident_flag == "0x0":
-            print("Attribute is Resident")
+            #print("Attribute is Resident")
 
             # Since its a resident attribute, i now continue to read the header of the resident attribute
             attribute_header = record[offset:offset+22]
@@ -278,48 +218,52 @@ def record_parser(record,record_location):
                 file_altered_time = get_filetime_str(metadata,0x08)
                 mft_changed_time = get_filetime_str(metadata,0x10)
                 file_read_time = get_filetime_str(metadata,0x18)
+                dos_file_permissions = get_int(metadata,0x20,0x24)
+                max_numb_ver = get_int(metadata,0x24,0x28)
+                ver_num = get_int(metadata,0x28,0x2c)
+                class_id = get_int(metadata,0x2c,0x30)
+               
+                # Create object for storing STANDARD_INFORMATION
+                # Append to the object the parsed data
+                record_obj.standard_info = StandardInformation(
+                    resident=resident_flag,
+                    created_time=file_creation_time,
+                    modified_time=file_altered_time,
+                    mft_modified_time=mft_changed_time,
+                    accessed_time=file_read_time,
+                    dos_file_permissions=dos_file_permissions,
+                    ver_num=ver_num,
+                    class_id=class_id
+                )
+            
 
                 
-
-                print(f"Magic number: {magic_num}")
-                print(f"Offset to first attribute: {offset_to_attribute} bytes")
-                print(f"Flags: {flags}")
-                print(f"Attribute location: {hex(offset_to_attribute)}")
-                print("Attributes:")
-                print("-----------")
-                print(f"Attribute type: {attribute_type}")
-                print(f"Attribute length total (including this header): {hex(attribute_length_total)}")
-                print(f"Resident/None-Resident flags: {resident_flag}")
-                print(f"Offset to metadata of the attribute: {offset_to_metadata}")
-                print(f"File Creation time:{file_creation_time}")
-                print(f"File Altered time:{file_altered_time}")
-                print(f"MFT changed time:{mft_changed_time}")
-                print(f"File Read time:{file_read_time}")
-
             if attribute_type == "0x30":
-                parent_dir = metadata[0x00:0x08]
+                parent_record = metadata[0x00:0x08]
+                file_creation_time =  get_filetime_str(metadata,0x08)
+                file_altered_time = get_filetime_str(metadata,0x10)
+                mft_changed_time = get_filetime_str(metadata,0x18)
+                file_read_time = get_filetime_str(metadata,0x20)
+                allocated_size_file = get_int(metadata,0x28,0x30)
+                real_size_file = get_int(metadata,0x30,0x38)
+                flags_filename = get_int(metadata,0x38,0x3c)
+                filename_len = get_int(metadata,0x40,0x42)
+                filename = get_bytes(metadata, 0x42, filename_len * 2).decode("utf-16le")
 
+                record_obj.file_name = FileNameAttribute(
+                    resident=resident_flag,
+                    parent_record=parent_record,
+                    created_time=file_creation_time,
+                    modified_time=file_altered_time,
+                    mft_modified_time=mft_changed_time,
+                    accessed_time=file_read_time,
+                    allocated_size_file=allocated_size_file,
+                    real_size_file=real_size_file,
+                    flags_filename=flags_filename,
+                    filename_len=filename_len,
+                    filename=filename
+                   )
 
-
-                print(f"Magic number: {magic_num}")
-                print(f"Offset to first attribute: {offset_to_attribute} bytes")
-                print(f"Flags: {flags}")
-                print(f"Attribute location: {hex(offset_to_attribute)}")
-                print("Attributes:")
-                print("-----------")
-                print(f"Attribute type: {attribute_type}")
-                print(f"Attribute length total (including this header): {hex(attribute_length_total)}")
-                print(f"Resident/None-Resident flags: {resident_flag}")
-                print(f"Offset to metadata of the attribute: {offset_to_metadata}")
-                print(f"Parent directory: {parent_dir}")
-
-
-
-
-
-                print(f"META OFFSET:{metadata}")
-                print(meta_start)
-                print(meta_end)
 
             
         else:
@@ -329,9 +273,10 @@ def record_parser(record,record_location):
         if attribute_length_total == 0:
             break
 
+        
         offset += attribute_length_total
-
+    print(record_obj)
+    return record_obj
     
-    #print(get_bytes(metadata,0x00,0x08))
 
 
