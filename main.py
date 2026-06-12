@@ -34,7 +34,8 @@ with open(disk_path, 'rb') as disk:
         # Here i parse the $MFT
         for p in partitions:
             p.filesystem.mft_records = get_mft_records(p,disk)
-            print(p)
+            #print(p)
+        
         
 
 

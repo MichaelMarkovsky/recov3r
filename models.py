@@ -79,7 +79,18 @@ class DataAttribute:
     # resident
     data: bytes | None = None
 
-    # non-resident
-    data_runs: list | None = None
-    allocated_size: int | None = None
-    real_size: int | None = None
+
+@dataclass
+class NoneResidentHeader:
+    resident: bool
+
+    starting_vcn: int
+    last_vcn: int
+    offset_to_dataruns: int
+    compression_unit_size:int
+    padding:int
+    real_size_attribute: int
+    allocated_size_attribute:int
+    initialized_data_size:int
+    attribute_name:int
+    data_runs:int
