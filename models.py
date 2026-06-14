@@ -32,6 +32,7 @@ class MFTRecord:
 
     # Attributes
     standard_info: StandardInformation | None = None
+    attr_list: AttributeListAttribute | None = None
     file_name: FileNameAttribute | None = None
     data: DataAttribute | None = None
 
@@ -80,6 +81,23 @@ class DataAttribute:
     data: bytes | None = None
 
 
+
+@dataclass
+class AttributeListAttribute:
+    resident: bool
+
+    al_type:int
+    al_record_len:int
+    al_name_len:int
+    al_offset_name:int
+    al_starting_vcn:int
+    al_base_file_ref_attr:int
+    al_attr_id:int
+    al_name:str
+
+
+
+
 @dataclass
 class NoneResidentHeader:
     resident: bool
@@ -93,4 +111,4 @@ class NoneResidentHeader:
     allocated_size_attribute:int
     initialized_data_size:int
     attribute_name:int
-    data_runs:int
+    data_runs:int # (LCN,run-len-size)

@@ -1,5 +1,5 @@
 from tabulate import tabulate
-from models import Partition,NTFSInfo,MFTRecord,StandardInformation,FileNameAttribute,DataAttribute,NoneResidentHeader
+from models import Partition,NTFSInfo,MFTRecord,StandardInformation,FileNameAttribute,DataAttribute,NoneResidentHeader,AttributeListAttribute
 import struct 
 from datetime import datetime, timedelta
 
@@ -128,26 +128,31 @@ def get_mft_records(partition,disk):
     print(f"[+] MFT records: {num_of_records}")
 
     records = []
+    record_index = 0
+   
+    for lcn,cluster_count in mft_runlist:
+        run_start = (int(partition.offset, 16) + lcn * partition.filesystem.cluster_size)
+        run_size_bytes = cluster_count * partition.filesystem.cluster_size
 
-    for record_index in range(num_of_records):
-        record_location = mft_location + record_index * 1024
+        records_in_run = run_size_bytes // 1024
 
-        disk.seek(record_location)
-        data = disk.read(1024)
+        for i in range(records_in_run):
+            record_location = run_start + i * 1024
 
-        # safety check (optional but recommended)
-        if data[:4] not in (b'FILE', b'FILE0'):
-            continue
+            disk.seek(record_location)
+            data = disk.read(1024)
 
-        record = record_parser(data, record_index, record_location)
-        records.append(record)
+            # safety check (optional but recommended)
+            if data[:4] not in (b'FILE', b'FILE0'):
+                continue
 
-        print(f"Record {record_index} @ {hex(record_location)}")
-    #return records
+            record = record_parser(data, record_index, record_location)
+            records.append(record)
 
-    # for record in records:
-    #     if record.record_location == 0x10B400:
-    #         print(record)
+            print(f"Record {record_index} @ {hex(record_location)}")
+            record_index += 1
+        
+    return records
 
 
 
@@ -238,25 +243,31 @@ def record_parser(record,record_index,record_location):
         attribute_type_int = get_int(attribute_header, 0x00, 0x04)
 
         attribute_length_total =  get_int(attribute_header,0x04,0x08)
-        resident_flag =  hex(get_int(attribute_header,0x08,0x9)) # either resident or non-resident flag
+        resident_flag =  get_int(attribute_header,0x08,0x9) # either resident or non-resident flag
 
         name_len = get_int(attribute_header, 0x09, 0x0a)
         offset_to_name = get_int(attribute_header, 0x0a, 0x0c)
         flags_header = get_int(attribute_header, 0x0c, 0x0e)
         attr_id = get_int(attribute_header, 0x0e, 0x10)
 
-
-
+        if attribute_type_int not in (0xFFFFFFFF, 0x00000000):
+            print(attribute_type)
+            
+            
          # STOP CONDITION (end of attribute list)
         if attribute_type_int in (0xFFFFFFFF, 0x00000000):
             break
 
-        if attribute_type not in ("0x10", "0x30", "0x80"):
+        if attribute_type_int not in (0x10, 0x20, 0x30, 0x80,0x90):
+        # Move to the next attribute seamlessly and skip processing
             offset += attribute_length_total
             continue
+        
+        
 
-        if resident_flag == "0x0":
-            #print("Attribute is Resident")
+       
+        if resident_flag == 0:
+            # Attribute is Resident"
 
             # Since its a resident attribute, i now continue to read the header of the resident attribute
             attribute_header = record[offset:offset+24]
@@ -271,11 +282,9 @@ def record_parser(record,record_index,record_location):
             meta_end = meta_start + attribute_length
 
             metadata = record[meta_start:meta_end]
-
-            
-
+                    
             # Getting the attribute of STANDARD_INFORMATION
-            if attribute_type == "0x10":
+            if attribute_type_int == 0x10:
                 file_creation_time =  get_filetime_str(metadata,0x00)
                 file_altered_time = get_filetime_str(metadata,0x08)
                 mft_changed_time = get_filetime_str(metadata,0x10)
@@ -297,10 +306,30 @@ def record_parser(record,record_index,record_location):
                     ver_num=ver_num,
                     class_id=class_id
                 )
-            
-
                 
-            if attribute_type == "0x30":
+            if attribute_type_int == 0x20:
+                al_type =  get_int(metadata,0x00,0x04)
+                al_record_len = get_int(metadata,0x04,0x06)
+                al_name_len = get_int(metadata,0x06,0x07)
+                al_offset_name = get_int(metadata,0x07,0x08)
+                al_starting_vcn = get_int(metadata,0x08,0x10)
+                al_base_file_ref_attr = get_int(metadata,0x10,0x18)
+                al_attr_id = get_int(metadata,0x18,0x1a)
+                al_name = get_bytes(metadata,0x1a,al_name_len*2).decode("utf-16le")
+               
+                record_obj.attr_list = AttributeListAttribute(
+                    resident=resident_flag,
+                    al_type=al_type,
+                    al_record_len=al_record_len,
+                    al_name_len=al_name_len,
+                    al_offset_name=al_offset_name,
+                    al_starting_vcn=al_starting_vcn,
+                    al_base_file_ref_attr=al_base_file_ref_attr,
+                    al_attr_id=al_attr_id,
+                    al_name=al_name
+                )
+                           
+            if attribute_type_int == 0x30:
                 parent_record = metadata[0x00:0x08]
                 file_creation_time =  get_filetime_str(metadata,0x08)
                 file_altered_time = get_filetime_str(metadata,0x10)
@@ -309,8 +338,8 @@ def record_parser(record,record_index,record_location):
                 allocated_size_file = get_int(metadata,0x28,0x30)
                 real_size_file = get_int(metadata,0x30,0x38)
                 flags_filename = get_int(metadata,0x38,0x3c)
-                filename_len = get_int(metadata,0x40,0x42)
-                filename = get_bytes(metadata, 0x42, filename_len * 2).decode("utf-16le")
+                filename_len = get_int(metadata,0x40,0x41)
+                filename = get_bytes(metadata, 0x42,0x42 + filename_len * 2).decode("utf-16le")
 
                 record_obj.file_name = FileNameAttribute(
                     resident=resident_flag,
@@ -326,16 +355,19 @@ def record_parser(record,record_index,record_location):
                     filename=filename
                 )
 
-            if attribute_type == "0x80":
+            if attribute_type_int == 0x80:
                 data_res = get_bytes(metadata,0x00,attribute_length)
 
                 record_obj.data = DataAttribute(
                     resident=True,
                     data = data_res
                 )
-            
+
+            if attribute_type_int == 0x90:
+               pass 
+                          
         else:
-            #print("Attribute is NOT Resident")
+            # Attribute is NOT Resident
             
             attribute_header = record[offset:offset+attribute_length]
            
@@ -350,11 +382,9 @@ def record_parser(record,record_index,record_location):
             initialized_data_size= get_int(attribute_header,0x38,0x40)
             attribute_name= get_int(attribute_header,0x40,2 * name_len)
             data_runs= get_runlist(attribute_header, offset_to_dataruns,attribute_length)
-            #print(f"attribute_length: {attribute_length}")
-            #print(f"Offset dataruns :{offset_to_dataruns}")
-            #print(allocated_size_attribute)
+            
 
-            if attribute_type == "0x10":
+            if attribute_type_int == 0x10:
                 record_obj.standard_info = NoneResidentHeader(
                     resident=resident_flag,
                     starting_vcn=starting_vcn,
@@ -368,7 +398,21 @@ def record_parser(record,record_index,record_location):
                     attribute_name=attribute_name,
                     data_runs=data_runs
                 )
-            if attribute_type == "0x30":
+            if attribute_type_int == 0x20:
+                 record_obj.attr_list = NoneResidentHeader(
+                    resident=resident_flag,
+                    starting_vcn=starting_vcn,
+                    last_vcn=last_vcn,
+                    offset_to_dataruns=offset_to_dataruns,
+                    compression_unit_size=compression_unit_size,
+                    padding=padding,
+                    real_size_attribute=real_size_attribute,
+                    allocated_size_attribute=allocated_size_attribute,
+                    initialized_data_size=initialized_data_size,
+                    attribute_name=attribute_name,
+                    data_runs=data_runs
+                )
+            if attribute_type_int == 0x30:
                 record_obj.file_name = NoneResidentHeader(
                     resident=resident_flag,
                     starting_vcn=starting_vcn,
@@ -383,7 +427,7 @@ def record_parser(record,record_index,record_location):
                     data_runs=data_runs
                 )
 
-            if attribute_type == "0x80":
+            if attribute_type_int == 0x80:
                 record_obj.data = NoneResidentHeader(
                     resident=resident_flag,
                     starting_vcn=starting_vcn,
