@@ -6,8 +6,10 @@ class Partition:
     index: int # number of partition in the partition table in MBR
     hex: str # represendation of the partition in hex
     bootable: bool 
-    type_name: str # file system type , for printing
+    type_name: int # file system type 
     offset: int # location of the partition in the disk
+    partition_size: int
+
     filesystem: object | None = None # object for more partition information
 
 @dataclass
@@ -15,7 +17,7 @@ class NTFSInfo:
     bytes_per_sector: int 
     sectors_per_cluster: int
     cluster_size: int
-    partition_size: int
+
     mft_cluster: int # in how many clusters the $MFT is in, from the partition
     mft_offset: int # how many bytes the $MFT is from the partition
     mft_location: int # location of partition from sector 0
@@ -112,3 +114,22 @@ class NoneResidentHeader:
     initialized_data_size:int
     attribute_name:int
     data_runs:int # (LCN,run-len-size)
+
+
+
+
+TYPE_MAP = {
+    0x00: "Empty",
+    0x01: "FAT12",
+    0x04: "FAT16",
+    0x05: "Extended",
+    0x06: "FAT16",
+    0x07: "NTFS/exFAT",
+    0x0B: "FAT32",
+    0x0C: "FAT32 (LBA)",
+    0x0E: "FAT16 (LBA)",
+    0x0F: "Extended (LBA)",
+    0x82: "Linux swap",
+    0x83: "Linux filesystem",
+    0x8E: "Linux LVM",
+}

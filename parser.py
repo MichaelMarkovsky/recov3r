@@ -39,22 +39,22 @@ def get_partitions(disk,block_size):
             bootable = True
 
         # - checking for type of file system
-        if partition[4:5].hex() == "07":
-            file_system = "NTFS"
+        file_system = partition[4]
 
         # - calculating where the partition begins
         starting_lba = partition[8:11]
         starting_lba_rev = int.from_bytes(starting_lba, byteorder='little') # Reads in little endian
         partition_offset = hex(starting_lba_rev * block_size)
 
-
         partition_hex = " ".join(f"{b:02X}" for b in partition)
+
+        partition_size = block_size * int.from_bytes(partition[12:15], byteorder='little') 
 
         # Check if partition is empty (all is =0)
         if not any(partition):
             ptable_rows.append([partition_index, "Empty"])
         else:
-            partitions.append(Partition(partition_index,partition_hex,bootable,file_system,partition_offset))
+            partitions.append(Partition(partition_index,partition_hex,bootable,file_system,partition_offset,partition_size))
             ptable_rows.append([partition_index,partition_hex,bootable,file_system,partition_offset])
 
         
@@ -81,7 +81,7 @@ def parse_partition(partition,disk):
     bytes_per_sector = int.from_bytes(data[11:13], byteorder='little')
     sectors_per_cluster = int.from_bytes(data[13:14], byteorder='little')
     cluster_size = bytes_per_sector * sectors_per_cluster # bytes
-    partition_size = int.from_bytes(data[0x28:0x30], byteorder='little') * bytes_per_sector
+    #partition_size = int.from_bytes(data[0x28:0x30], byteorder='little') * bytes_per_sector
 
     # Finding MFT offset
     mft_cluster = int.from_bytes(data[0x30:0x38], "little")
@@ -91,7 +91,7 @@ def parse_partition(partition,disk):
     
     
 
-    return NTFSInfo(bytes_per_sector,sectors_per_cluster,cluster_size,partition_size,mft_cluster,mft_offset,mft_location)
+    return NTFSInfo(bytes_per_sector,sectors_per_cluster,cluster_size,mft_cluster,mft_offset,mft_location)
 
 
 
@@ -101,7 +101,7 @@ def filesystem_info_print(p):
         print(f"Bytes per sector: {p.filesystem.bytes_per_sector}")
         print(f"Sectors per cluster: {p.filesystem.sectors_per_cluster}")
         print(f"Cluster size: {p.filesystem.cluster_size}")
-        megabytes = p.filesystem.partition_size / (1024 * 1024)
+        megabytes = p.partition_size / (1024 * 1024)
         print(f"Partition size: {megabytes:.2f} MB")
 
         print(f"$MFT starts in {p.filesystem.mft_cluster} clusters.")
