@@ -4,7 +4,7 @@ from textual.app import App, ComposeResult
 from textual.widgets import Header,Footer,Static,Label,DataTable,Select
 from textual.containers import Container,Horizontal,Vertical
 import os
-from models import TYPE_MAP
+from models import TYPE_MAP,FLAGS_MFT,FILE_ATTRIBUTES,DataAttribute,NoneResidentHeader
 
 
 def parse(disk_path):
@@ -78,9 +78,9 @@ def populate_partition_list(partitions,partition_list):
 
         partition_list.append((str(index),str(bootable),str(type_name),str(p_size_megabytes)))
 
-def populate_mft_list(partition,mft_list):
+def populate_mft_list(partition,mft_list,mft_map):
     mft_records = partition.filesystem.mft_records
-    for record in mft_records:
+    for i, record in enumerate(mft_records):
         record_num = record.record_number
         magic_num = record.magic_num
         record_offset = record.record_location
@@ -91,6 +91,9 @@ def populate_mft_list(partition,mft_list):
             file_name = ""
 
         mft_list.append((str(record_num),str(magic_num),str(record_offset),str(flags),str(file_name)))
+
+        mft_map.append(record)
+
 
 def populate_del_list(partition,del_list):
     mft_records = partition.filesystem.mft_records
@@ -106,8 +109,121 @@ def populate_del_list(partition,del_list):
 
 
 
+def show_partition_metadata(partition):
+
+    return Container(
+        Static(
+            f"""Partition {partition.index}
+────────────────────
+Bootable : {partition.bootable}
+Size     : {partition.partition_size}
+Hex      : {partition.hex}
+"""
+        )
+    )
 
 
+def safe(v, default="N/A"):
+    return v if v is not None else default
+
+
+def decode_file_attributes(flags: int):
+    if not flags:
+        return []
+
+    return [
+        name
+        for bit, name in FILE_ATTRIBUTES.items()
+        if flags & bit
+    ]
+
+def build_metadata_view(record):
+
+    si = getattr(record, "standard_info", None)
+    fn = getattr(record, "file_name", None)
+    data = getattr(record, "data", None)
+
+    return Horizontal(
+        Container(Static(build_standard_info(si)), id="meta_left"),
+        Container(Static(build_file_name(fn)), id="meta_middle"),
+        Container(Static(build_data(data)), id="meta_right"),
+    )
+
+def build_standard_info(si):
+
+    if not si:
+        return "STANDARD INFO\n──────────────\nNone"
+
+    attrs = decode_file_attributes(getattr(si, "dos_file_permissions", 0))
+
+    return (
+        "STANDARD INFO\n"
+        "──────────────\n"
+        f"Created   : {si.created_time}\n"
+        f"Modified  : {si.modified_time}\n"
+        f"Accessed  : {si.accessed_time}\n"
+        f"MFT Mod   : {si.mft_modified_time}\n"
+        f"Attributes: {', '.join(attrs) if attrs else 'None'}\n"
+        f"Version   : {si.ver_num}\n"
+        f"Class ID  : {si.class_id}\n"
+    )
+
+
+def build_file_name(fn):
+
+    if not fn:
+        return "FILE NAME\n──────────\nNone"
+
+    return (
+        "FILE NAME\n"
+        "──────────\n"
+        f"Name      : {fn.filename}\n"
+        f"Parent    : {fn.parent_record}\n"
+        f"Size      : {fn.real_size_file}\n"
+        f"Allocated : {fn.allocated_size_file}\n"
+        f"Length    : {fn.filename_len}\n"
+        f"Flags     : {fn.flags_filename}\n"
+    )
+
+def build_data(data):
+
+    if data is None:
+        return "DATA\n────\nNone"
+
+    # ---------------- RESIDENT ----------------
+    if hasattr(data, "data"):
+
+        raw = data.data or b""
+
+        try:
+            text = raw.decode("utf-8", errors="replace")
+        except:
+            text = repr(raw)
+
+        return (
+            "DATA (RESIDENT)\n"
+            "───────────────\n"
+            f"{text}"
+        )
+
+    # ---------------- NON RESIDENT ----------------
+    if hasattr(data, "data_runs"):
+
+        lines = [
+            "DATA (NON-RESIDENT)",
+            "───────────────────",
+            f"VCN Start : {data.starting_vcn}",
+            f"VCN End   : {data.last_vcn}",
+            "",
+            "RUN LIST:",
+        ]
+
+        for i, (lcn, length) in enumerate(data.data_runs):
+            lines.append(f"{i}: LCN={lcn} LEN={length}")
+
+        return "\n".join(lines)
+
+    return f"DATA\n────\nUnknown type: {type(data).__name__}"
 
 
 # TUI:
@@ -118,11 +234,13 @@ class recov3rApp(App):
     def on_mount(self):
         self.partitions = []
         self.partition_list = [] # List of partitions for table (TUI)
-        #self.mft_list = [,]
         self.deleted_list = []
-
+        
+        self.mft_map = []
 
     def compose(self) -> ComposeResult:
+        self.metadata = Container(id="metadata")
+
         yield Vertical(
             Container(
                 Select(
@@ -130,14 +248,16 @@ class recov3rApp(App):
                     prompt="Choose disk image"
                 )
             ),
+
             Horizontal(
                 DataTable(id="table_partitions"),
                 DataTable(id="table_mft"),
                 DataTable(id="table_deleted"),
                 classes="tables"
             ),
-            Static("MetaData")
-          )
+
+            self.metadata
+        )
 
     @on(Select.Changed)
     def select_changed(self, event: Select.Changed) -> None:
@@ -177,14 +297,16 @@ class recov3rApp(App):
             partitions_table.add_rows(rows)
 
 
-    @on(DataTable.RowSelected)
-    def on_row_selected(self, event: DataTable.RowSelected):
+    @on(DataTable.RowHighlighted)
+    def on_row_selected(self, event: DataTable.RowHighlighted):
         table = event.data_table  # or event.control
         
         # Update both MFT and Deleted files tables
         if table.id == "table_partitions":
             # =========== MFT Table ============
             mft_table = self.query_one("#table_mft", DataTable)
+            mft_table.cursor_type = "row"
+
 
 
             row_index = event.cursor_row
@@ -195,18 +317,18 @@ class recov3rApp(App):
             headers = ("Record Number","Magic Number","Record Offset","Flags","File Name")
             rows = []
 
-           
+            self.mft_map.clear() 
             # Populate partition list
-            populate_mft_list(partition,rows)
+            populate_mft_list(partition,rows,self.mft_map)
             
             #self.notify(str(len(rows)))
 
             if not rows:
                 return
 
-             # Clear the table
+            # Clear the table
             mft_table.clear(columns=True)
-
+            
 
             mft_table.add_columns(*headers)
             mft_table.add_rows(rows)
@@ -227,20 +349,61 @@ class recov3rApp(App):
             del_table.clear(columns=True)
 
 
+
             del_table.add_columns(*headers_del)
             del_table.add_rows(rows_del)
 
 
 
-
-
-
-
+           
 
         elif table.id == "table_mft":
             # handle MFT selection separately
             pass
 
+
+   
+    @on(DataTable.RowHighlighted)
+    def on_row_highlighted(self, event: DataTable.RowHighlighted):
+        self.notify(f"TABLE = {event.data_table.id} | ROW = {event.cursor_row}")
+        table = event.data_table
+        index = event.cursor_row
+
+        if index is None:
+            return
+
+        table_id = table.id
+        
+        if not table.has_focus:
+            return
+
+        # ================= PARTITIONS =================
+        if table_id == "table_partitions":
+            if index >= len(self.partitions):
+                return
+
+            partition = self.partitions[index]
+
+            self.metadata.remove_children()
+            self.metadata.mount(show_partition_metadata(partition))
+        # ================= MFT =================
+        elif table_id == "table_mft":
+            if index is None:
+                return
+
+            if index >= len(self.mft_map):
+                return
+
+            entry = self.mft_map[index]
+
+            if entry is None:
+                return
+
+            self.metadata.remove_children()
+            self.metadata.mount(build_metadata_view(entry))
+        # ================= DELETED =================
+        elif table_id == "table_deleted":
+            return
 
 
 if __name__ == "__main__":

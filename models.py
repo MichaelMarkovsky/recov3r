@@ -133,3 +133,29 @@ TYPE_MAP = {
     0x83: "Linux filesystem",
     0x8E: "Linux LVM",
 }
+
+FLAGS_MFT = {
+    0: "Deleted File",
+    1: "Active File",
+    2: "Deleted Directory",
+    3: "Active Directory",
+    4: "Non-standard (4)",
+    5: None,
+    6: None,
+    7: None,
+    8: "Non-standard (8)",
+}
+
+FILE_ATTRIBUTES = {
+    0x1: "READ_ONLY",
+    0x2: "HIDDEN",
+    0x4: "SYSTEM",
+    0x20: "ARCHIVE",
+    0x100: "TEMPORARY",
+    0x200: "SPARSE_FILE",
+    0x400: "REPARSE_POINT",
+    0x800: "COMPRESSED",
+    0x1000: "OFFLINE",
+    0x2000: "NOT_CONTENT_INDEXED",
+    0x4000: "ENCRYPTED",
+}

@@ -1,0 +1,52 @@
+
+
+#tables {
+    height: 1fr;
+}
+
+
+DataTable {
+    width: 1fr;
+    height: 100%;
+}
+
+#meta_container {
+    height: 1fr;
+}
+
+#meta_left, #meta_middle, #meta_right {
+    border: solid gray;
+    padding: 1;
+}
+
+#meta_left {
+    width: 1fr;
+}
+
+#meta_middle {
+    width: 1fr;
+}
+
+#meta_right {
+    width: 2fr;
+}
+
+.meta_title {
+    text-align: center;
+    color: cyan;
+    text-style: bold;
+    padding: 1;
+}
+
+.meta_body {
+    padding-left: 2;
+}
+
+#partition_meta_container {
+    border: round cyan;
+    padding: 1;
+}
+
+#metadata {
+    text-align: center;
+}
