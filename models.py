@@ -117,7 +117,7 @@ class NoneResidentHeader:
 
 
 
-
+# This map is for suggested filesystem from partition table
 TYPE_MAP = {
     0x00: "Empty",
     0x01: "FAT12",
