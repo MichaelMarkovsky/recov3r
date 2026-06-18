@@ -1,52 +1,66 @@
-
-
 #tables {
     height: 1fr;
 }
-
 
 DataTable {
     width: 1fr;
     height: 100%;
 }
 
-#meta_container {
+/* =========================
+   METADATA ROOT CONTAINER
+   ========================= */
+#metadata {
+    width: 1fr;
     height: 1fr;
+    align: center middle;
 }
 
-#meta_left, #meta_middle, #meta_right {
-    border: solid gray;
-    padding: 1;
-}
-
-#meta_left {
+/* =========================
+   PARTITION METADATA PANEL
+   ========================= */
+#partition_meta {
     width: 1fr;
-}
-
-#meta_middle {
-    width: 1fr;
-}
-
-#meta_right {
-    width: 2fr;
-}
-
-.meta_title {
-    text-align: center;
-    color: cyan;
-    text-style: bold;
-    padding: 1;
-}
-
-.meta_body {
-    padding-left: 2;
-}
-
-#partition_meta_container {
     border: round cyan;
     padding: 1;
 }
 
-#metadata {
+/* title (Partition X) */
+.meta_title {
     text-align: center;
+    text-style: bold;
+    padding-bottom: 1;
+}
+
+/* structured info blocks */
+.meta_grid {
+    layout: vertical;
+    padding: 1;
+}
+
+/* hex / raw data section */
+.meta_hex {
+    margin-top: 1;
+    color: gray;
+    text-style: dim;
+}
+
+/* =========================
+   MFT / FILE METADATA PANELS
+   ========================= */
+#meta_left, #meta_middle, #meta_right {
+    border: solid gray;
+    padding: 1;
+    width: 1fr;
+}
+
+/* make right column wider */
+#meta_right {
+    width: 2fr;
+}
+
+/* text styling helper */
+.meta_body {
+    padding-left: 2;
+    text-align: left;
 }

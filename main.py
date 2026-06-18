@@ -95,7 +95,7 @@ def populate_mft_list(partition,mft_list,mft_map):
         mft_map.append(record)
 
 
-def populate_del_list(partition,del_list):
+def populate_del_list(partition,del_list,del_map):
     mft_records = partition.filesystem.mft_records
     for record in mft_records:
         # Only added deleted 
@@ -107,19 +107,79 @@ def populate_del_list(partition,del_list):
                 file_name = ""
             del_list.append((str(record_num),str(file_name)))
 
+            del_map.append(record)
+
+def populate_del_fil_list(partition, del_list, del_map):
+    mft_records = partition.filesystem.mft_records
+
+    deleted = []
+    i_map = {}
+    r_map = {}
+
+    # 1. Collect deleted records + split I / R
+    for record in mft_records:
+        if record.flags == 0:
+            try:
+                name = record.file_name.filename
+            except AttributeError:
+                name = ""
+
+            deleted.append((record, name))
+
+            if name.startswith("$I"):
+                i_map[name] = record
+            elif name.startswith("$R"):
+                r_map[name] = record
+
+    used = set()
+
+    # 2. Match $I -> $R and assign display name
+    for i_name, i_rec in i_map.items():
+        r_name = "$R" + i_name[2:]
+
+        if r_name in r_map and i_name not in used:
+            r_rec = r_map[r_name]
+
+            # --- decode NTFS data (UTF-16LE) ---
+            raw = i_rec.data.data
+            path = raw.decode("utf-16le", errors="ignore")
+
+            # normalize Windows path
+            path = path.replace("\\", "/")
+
+            # extract filename only
+            r_rec.display_name = os.path.basename(path)
+
+            # keep ONLY reconstructed R record
+            del_map.append(r_rec)
+            del_list.append(r_rec)
+
+            used.add(i_name)
+            used.add(r_name)
+
+    # 3. Add normal deleted files (non I/R)
+    for record, name in deleted:
+        if not name.startswith("$I") and not name.startswith("$R"):
+
+            if not hasattr(record, "display_name"):
+                record.display_name = name
+
+            del_map.append(record)
+            del_list.append(record)
+
 
 
 def show_partition_metadata(partition):
 
     return Container(
+        Static(f"Partition {partition.index}", classes="meta_title"),
+
         Static(
-            f"""Partition {partition.index}
-────────────────────
-Bootable : {partition.bootable}
-Size     : {partition.partition_size}
-Hex      : {partition.hex}
-"""
-        )
+            f"Bootable : {partition.bootable}\n"
+            f"Size     : {partition.partition_size} bytes\n"
+            f"Hex      : {partition.hex}",
+            classes="meta_body"
+        ),
     )
 
 
@@ -179,8 +239,8 @@ def build_file_name(fn):
         "──────────\n"
         f"Name      : {fn.filename}\n"
         f"Parent    : {fn.parent_record}\n"
-        f"Size      : {fn.real_size_file}\n"
-        f"Allocated : {fn.allocated_size_file}\n"
+        f"Size      : {fn.real_size_file} bytes\n"
+        f"Allocated : {fn.allocated_size_file} bytes\n"
         f"Length    : {fn.filename_len}\n"
         f"Flags     : {fn.flags_filename}\n"
     )
@@ -235,8 +295,11 @@ class recov3rApp(App):
         self.partitions = []
         self.partition_list = [] # List of partitions for table (TUI)
         self.deleted_list = []
+        self.deleted_list_filtered = []
         
         self.mft_map = []
+        self.del_map = [] # Gets all records with flag 0 (deleted)
+        self.del_map_filtered = [] # Filters and reconstacts deleted files (data+file name)
 
     def compose(self) -> ComposeResult:
         self.metadata = Container(id="metadata")
@@ -253,6 +316,7 @@ class recov3rApp(App):
                 DataTable(id="table_partitions"),
                 DataTable(id="table_mft"),
                 DataTable(id="table_deleted"),
+                DataTable(id="table_del_final"),
                 classes="tables"
             ),
 
@@ -276,11 +340,14 @@ class recov3rApp(App):
             self.partition_list.clear()
             self.partitions.clear()
 
+
+
+
             self.partitions = parse(disk_path)
 
 
             # Add Headers
-            headers = ("Index", "Bootable", "File System", "Size")
+            headers = ("Index", "Bootable", "File System", "Size (MB)")
             rows = []
 
            
@@ -317,7 +384,11 @@ class recov3rApp(App):
             headers = ("Record Number","Magic Number","Record Offset","Flags","File Name")
             rows = []
 
-            self.mft_map.clear() 
+            
+            self.del_map = []
+            self.del_map_filtered = []
+            self.mft_map = []
+
             # Populate partition list
             populate_mft_list(partition,rows,self.mft_map)
             
@@ -337,11 +408,14 @@ class recov3rApp(App):
 
             # ========= Deleted Files Table ===========
             del_table = self.query_one("#table_deleted", DataTable)
+            del_table.cursor_type = "row"
+
 
             headers_del = ("Record Number","File Name")
             rows_del = []
 
-            populate_del_list(partition,rows_del)
+            self.del_map.clear()
+            populate_del_list(partition,rows_del,self.del_map)
 
             if not rows_del:
                 return
@@ -353,9 +427,28 @@ class recov3rApp(App):
             del_table.add_columns(*headers_del)
             del_table.add_rows(rows_del)
 
+            # ============= Deleted Reconstructed Table ===========
+            del_final_table = self.query_one("#table_del_final", DataTable)
+            del_final_table.cursor_type = "row"
+
+            headers = ("Record Number", "File Name")
+
+            rows_del_final = []
+            self.del_map_filtered.clear()
+
+            populate_del_fil_list(partition, rows_del_final, self.del_map_filtered)
+
+            del_final_table.clear(columns=True)
+            del_final_table.add_columns(*headers)
 
 
-           
+            rows = []
+            for rec in rows_del_final:
+                name = getattr(rec, "display_name", rec.file_name.filename)
+                self.notify(f"{rec.record_number} | display={getattr(rec,'display_name',None)} | file={rec.file_name.filename}")
+                rows.append((str(rec.record_number), name))
+
+            del_final_table.add_rows(rows)      
 
         elif table.id == "table_mft":
             # handle MFT selection separately
@@ -365,7 +458,7 @@ class recov3rApp(App):
    
     @on(DataTable.RowHighlighted)
     def on_row_highlighted(self, event: DataTable.RowHighlighted):
-        self.notify(f"TABLE = {event.data_table.id} | ROW = {event.cursor_row}")
+        #self.notify(f"TABLE = {event.data_table.id} | ROW = {event.cursor_row}")
         table = event.data_table
         index = event.cursor_row
 
@@ -403,7 +496,32 @@ class recov3rApp(App):
             self.metadata.mount(build_metadata_view(entry))
         # ================= DELETED =================
         elif table_id == "table_deleted":
-            return
+            
+            if index >= len(self.del_map):
+                return
+
+            entry = self.del_map[index]
+
+            if entry is None:
+                return
+
+            self.metadata.remove_children()
+            self.metadata.mount(build_metadata_view(entry))
+
+        # ============= Filtered Deleted =====================
+        elif table_id == "table_del_final":
+        
+            if index >= len(self.del_map_filtered):
+                return
+
+            entry = self.del_map_filtered[index]
+
+            if entry is None:
+                return
+
+            self.metadata.remove_children()
+            self.metadata.mount(build_metadata_view(entry))
+
 
 
 if __name__ == "__main__":
