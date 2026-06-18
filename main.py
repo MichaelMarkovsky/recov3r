@@ -286,30 +286,62 @@ def build_data(data):
     return f"DATA\n────\nUnknown type: {type(data).__name__}"
 
 
-# TUI:
 class recov3rApp(App):
-    ansi_color=None,
+    ansi_color = None
     CSS_PATH = "styles.tcss"
 
     def on_mount(self):
         self.partitions = []
-        self.partition_list = [] # List of partitions for table (TUI)
+
+        self.partition_list = []
+
         self.deleted_list = []
         self.deleted_list_filtered = []
-        
-        self.mft_map = []
-        self.del_map = [] # Gets all records with flag 0 (deleted)
-        self.del_map_filtered = [] # Filters and reconstacts deleted files (data+file name)
 
+        self.mft_map = []
+        self.del_map = []
+        self.del_map_filtered = []
+
+        self.cache = {}
+
+    # ================= CACHE BUILDER =================
+    def build_partition_cache(self, index):
+        if index in self.cache:
+            return
+
+        partition = self.partitions[index]
+
+        # -------- MFT --------
+        mft_rows = []
+        mft_map = []
+        populate_mft_list(partition, mft_rows, mft_map)
+
+        # -------- Deleted --------
+        del_rows = []
+        del_map = []
+        populate_del_list(partition, del_rows, del_map)
+
+        # -------- Reconstructed --------
+        rec_rows = []
+        rec_map = []
+        populate_del_fil_list(partition, rec_rows, rec_map)
+
+        self.cache[index] = {
+            "mft_rows": mft_rows,
+            "mft_map": mft_map,
+            "del_rows": del_rows,
+            "del_map": del_map,
+            "rec_records": rec_rows,
+            "rec_map": rec_map,
+        }
+
+    # ================= UI =================
     def compose(self) -> ComposeResult:
         self.metadata = Container(id="metadata")
 
         yield Vertical(
             Container(
-                Select(
-                    [(img, img) for img in get_imgs()],
-                    prompt="Choose disk image"
-                )
+                Select([(img, img) for img in get_imgs()], prompt="Choose disk image")
             ),
 
             Horizontal(
@@ -323,205 +355,117 @@ class recov3rApp(App):
             self.metadata
         )
 
+    # ================= LOAD DISK =================
     @on(Select.Changed)
     def select_changed(self, event: Select.Changed) -> None:
         disk_path = event.value
-        
 
-        if disk_path and disk_path != Select.NULL:
-            # Try to get the disk
-             
-            #self.notify("Found it") # Notification
-            partitions_table = self.query_one("#table_partitions", DataTable)
-            partitions_table.cursor_type = "row"
+        if not disk_path or disk_path == Select.NULL:
+            return
 
-            # Clear the table
-            partitions_table.clear(columns=True)
-            self.partition_list.clear()
-            self.partitions.clear()
+        self.partitions = parse(disk_path)
+        self.cache.clear()
 
+        table = self.query_one("#table_partitions", DataTable)
+        table.cursor_type = "row"
+        table.clear(columns=True)
 
+        headers = ("Index", "Bootable", "File System", "Size (MB)")
+        rows = []
 
+        populate_partition_list(self.partitions, rows)
 
-            self.partitions = parse(disk_path)
+        table.add_columns(*headers)
+        table.add_rows(rows)
 
-
-            # Add Headers
-            headers = ("Index", "Bootable", "File System", "Size (MB)")
-            rows = []
-
-           
-            # Populate partition list
-            populate_partition_list(self.partitions,rows)
-
-
-            if not rows:
-                return
-            
-            # Add headers
-            partitions_table.add_columns(*headers)
-            # Add rows
-            partitions_table.add_rows(rows)
-
-
+    # ================= PARTITION CLICK =================
     @on(DataTable.RowHighlighted)
     def on_row_selected(self, event: DataTable.RowHighlighted):
-        table = event.data_table  # or event.control
-        
-        # Update both MFT and Deleted files tables
-        if table.id == "table_partitions":
-            # =========== MFT Table ============
-            mft_table = self.query_one("#table_mft", DataTable)
-            mft_table.cursor_type = "row"
 
+        table = event.data_table
 
+        if table.id != "table_partitions":
+            return
 
-            row_index = event.cursor_row
-            partition = self.partitions[row_index]
+        index = event.cursor_row
 
+        # build cache once
+        self.build_partition_cache(index)
+        data = self.cache[index]
 
-            # Add Headers
-            headers = ("Record Number","Magic Number","Record Offset","Flags","File Name")
-            rows = []
+        # ================= MFT =================
+        mft_table = self.query_one("#table_mft", DataTable)
+        mft_table.cursor_type = "row"
+        mft_table.clear(columns=True)
 
-            
-            self.del_map = []
-            self.del_map_filtered = []
-            self.mft_map = []
+        mft_headers = ("Record Number", "Magic Number", "Record Offset", "Flags", "File Name")
+        mft_table.add_columns(*mft_headers)
 
-            # Populate partition list
-            populate_mft_list(partition,rows,self.mft_map)
-            
-            #self.notify(str(len(rows)))
+        mft_table.add_rows(data["mft_rows"])
+        self.mft_map = data["mft_map"]
 
-            if not rows:
-                return
+        # ================= DELETED =================
+        del_table = self.query_one("#table_deleted", DataTable)
+        del_table.cursor_type = "row"
+        del_table.clear(columns=True)
 
-            # Clear the table
-            mft_table.clear(columns=True)
-            
+        del_table.add_columns("Record Number", "File Name")
+        del_table.add_rows(data["del_rows"])
 
-            mft_table.add_columns(*headers)
-            mft_table.add_rows(rows)
+        self.del_map = data["del_map"]
 
+        # ================= RECONSTRUCTED =================
+        rec_table = self.query_one("#table_del_final", DataTable)
+        rec_table.cursor_type = "row"
+        rec_table.clear(columns=True)
 
+        rec_table.add_columns("Record Number", "File Name")
 
-            # ========= Deleted Files Table ===========
-            del_table = self.query_one("#table_deleted", DataTable)
-            del_table.cursor_type = "row"
+        self.del_map_filtered = data["rec_map"]
 
+        rows = [
+            (
+                str(rec.record_number),
+                getattr(
+                    rec,
+                    "display_name",
+                    getattr(getattr(rec, "file_name", None), "filename", "")
+                )
+            )
+            for rec in data["rec_records"]
+        ]
 
-            headers_del = ("Record Number","File Name")
-            rows_del = []
+        rec_table.add_rows(rows)
 
-            self.del_map.clear()
-            populate_del_list(partition,rows_del,self.del_map)
-
-            if not rows_del:
-                return
-
-            del_table.clear(columns=True)
-
-
-
-            del_table.add_columns(*headers_del)
-            del_table.add_rows(rows_del)
-
-            # ============= Deleted Reconstructed Table ===========
-            del_final_table = self.query_one("#table_del_final", DataTable)
-            del_final_table.cursor_type = "row"
-
-            headers = ("Record Number", "File Name")
-
-            rows_del_final = []
-            self.del_map_filtered.clear()
-
-            populate_del_fil_list(partition, rows_del_final, self.del_map_filtered)
-
-            del_final_table.clear(columns=True)
-            del_final_table.add_columns(*headers)
-
-
-            rows = []
-            for rec in rows_del_final:
-                name = getattr(rec, "display_name", rec.file_name.filename)
-                self.notify(f"{rec.record_number} | display={getattr(rec,'display_name',None)} | file={rec.file_name.filename}")
-                rows.append((str(rec.record_number), name))
-
-            del_final_table.add_rows(rows)      
-
-        elif table.id == "table_mft":
-            # handle MFT selection separately
-            pass
-
-
-   
+    # ================= METADATA CLICK =================
     @on(DataTable.RowHighlighted)
     def on_row_highlighted(self, event: DataTable.RowHighlighted):
-        #self.notify(f"TABLE = {event.data_table.id} | ROW = {event.cursor_row}")
+
         table = event.data_table
         index = event.cursor_row
 
-        if index is None:
+        if index is None or not table.has_focus:
             return
 
-        table_id = table.id
-        
-        if not table.has_focus:
-            return
-
-        # ================= PARTITIONS =================
-        if table_id == "table_partitions":
-            if index >= len(self.partitions):
-                return
-
+        if table.id == "table_partitions":
             partition = self.partitions[index]
-
             self.metadata.remove_children()
             self.metadata.mount(show_partition_metadata(partition))
-        # ================= MFT =================
-        elif table_id == "table_mft":
-            if index is None:
-                return
 
-            if index >= len(self.mft_map):
-                return
-
+        elif table.id == "table_mft":
             entry = self.mft_map[index]
-
-            if entry is None:
-                return
-
             self.metadata.remove_children()
             self.metadata.mount(build_metadata_view(entry))
-        # ================= DELETED =================
-        elif table_id == "table_deleted":
-            
-            if index >= len(self.del_map):
-                return
 
+        elif table.id == "table_deleted":
             entry = self.del_map[index]
-
-            if entry is None:
-                return
-
             self.metadata.remove_children()
             self.metadata.mount(build_metadata_view(entry))
 
-        # ============= Filtered Deleted =====================
-        elif table_id == "table_del_final":
-        
-            if index >= len(self.del_map_filtered):
-                return
-
+        elif table.id == "table_del_final":
             entry = self.del_map_filtered[index]
-
-            if entry is None:
-                return
-
             self.metadata.remove_children()
             self.metadata.mount(build_metadata_view(entry))
-
 
 
 if __name__ == "__main__":
