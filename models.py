@@ -60,7 +60,7 @@ class FileNameAttribute:
     resident: bool
     
     # Metadata (Resident)
-    parent_record: int
+    parent: tuple[int, int]
 
     created_time: datetime
     modified_time: datetime

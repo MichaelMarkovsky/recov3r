@@ -349,9 +349,13 @@ def record_parser(record,record_index,record_location):
                 filename_len = get_int(metadata,0x40,0x41)
                 filename = get_bytes(metadata, 0x42,0x42 + filename_len * 2).decode("utf-16le")
 
+                parent_record_number = int.from_bytes(parent_record[:6], "little")
+                parent_sequence = int.from_bytes(parent_record[6:], "little")
+                parent = (parent_record_number,parent_sequence)
+
                 record_obj.file_name = FileNameAttribute(
                     resident=resident_flag,
-                    parent_record=parent_record,
+                    parent=parent,
                     created_time=file_creation_time,
                     modified_time=file_altered_time,
                     mft_modified_time=mft_changed_time,

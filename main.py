@@ -235,15 +235,16 @@ def build_standard_info(si):
 
 
 def build_file_name(fn):
-
     if not fn:
         return "FILE NAME\n──────────\nNone"
+
+    parent_record, parent_seq = fn.parent
 
     return (
         "FILE NAME\n"
         "──────────\n"
         f"Name      : {fn.filename}\n"
-        f"Parent    : {fn.parent_record}\n"
+        f"Parent    : {parent_record} (seq {parent_seq})\n"
         f"Size      : {fn.real_size_file} bytes\n"
         f"Allocated : {fn.allocated_size_file} bytes\n"
         f"Length    : {fn.filename_len}\n"
@@ -364,8 +365,18 @@ def recover_record(disk, record, partition, partition_dir):
 class recov3rApp(App):
     ansi_color = True
     CSS_PATH = "styles6.tcss"
+    BINDINGS = [
+        ("o", "recover", "Recover Disk"),
+        ("q", "quit", "Quit"),
+    ]
+    ENABLE_COMMAND_PALETTE = False
 
     def on_mount(self):
+        self.query_one("#table_partitions").border_title = "Partitions"
+        self.query_one("#table_mft").border_title = "$MFT"
+        self.query_one("#table_deleted").border_title = "Deleted Files"
+        self.query_one("#table_del_final").border_title = "Deleted Reconstracted Files"
+
         self.partitions = []
 
         self.partition_list = []
@@ -415,6 +426,7 @@ class recov3rApp(App):
     # ================= UI =================
     def compose(self) -> ComposeResult:
         self.metadata = Container(id="metadata")
+        self.footer = Footer(id="footer")
 
         yield Vertical(
             Container(
@@ -430,7 +442,8 @@ class recov3rApp(App):
                 classes="tables"
             ),
 
-            self.metadata
+            self.metadata,
+            self.footer
         )
 
     # ================= LOAD DISK =================
@@ -549,9 +562,6 @@ class recov3rApp(App):
 
 
 
-
-    
-
     @on(Key)
     def on_key(self, event: Key):
         if event.key.lower() != "o":
@@ -571,14 +581,19 @@ class recov3rApp(App):
                 os.makedirs(partition_dir, exist_ok=True)
 
                 for record in rec_map:
-                    for stream in record.data:
-                        self.notify(f"{getattr(record, 'display_name', '?')} | resident={stream.resident} | has_data={hasattr(stream, 'data')} | data={getattr(stream, 'data', None)}")
+                    #for stream in record.data:
+                        #self.notify(f"{getattr(record, 'display_name', '?')} | resident={stream.resident} | has_data={hasattr(stream, 'data')} | data={getattr(stream, 'data', None)}")
 
                     try:
                         recover_record(disk, record, partition, partition_dir)
                         self.notify(f"Recovered: {getattr(record, 'display_name', record.record_number)}")
                     except Exception as e:
                         self.notify(f"Error on record {record.record_number}: {e}")
+
+
+
+
+
 
 if __name__ == "__main__":
     app = recov3rApp()
