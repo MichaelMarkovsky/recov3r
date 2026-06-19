@@ -36,7 +36,7 @@ class MFTRecord:
     standard_info: StandardInformation | None = None
     attr_list: AttributeListAttribute | None = None
     file_name: FileNameAttribute | None = None
-    data: DataAttribute | None = None
+    data: list[DataAttribute | NoneResidentHeader] = field(default_factory=list)
 
 @dataclass
 class StandardInformation:
@@ -78,8 +78,11 @@ class FileNameAttribute:
 @dataclass
 class DataAttribute:
     resident: bool
-
+    
+    offset_data: int
+    data_length: int
     # resident
+    stream_name: str = "" # "" = main stream
     data: bytes | None = None
 
 
@@ -114,6 +117,7 @@ class NoneResidentHeader:
     initialized_data_size:int
     attribute_name:int
     data_runs:int # (LCN,run-len-size)
+    stream_name: str = ""
 
 
 

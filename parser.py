@@ -118,7 +118,7 @@ def get_mft_records(partition,disk):
     mft_record_data = disk.read(1024)
 
     mft_record = record_parser(mft_record_data,0,mft_location)
-    mft_runlist = mft_record.data.data_runs
+    mft_runlist = mft_record.data[0].data_runs
 
     total_clusters = sum(length for _, length in mft_runlist)
     mft_size_bytes = total_clusters * partition.filesystem.cluster_size
@@ -282,7 +282,15 @@ def record_parser(record,record_index,record_location):
             meta_end = meta_start + attribute_length
 
             metadata = record[meta_start:meta_end]
-                    
+
+
+
+            if name_len > 0:
+                name_abs = offset + offset_to_name
+                stream_name = record[name_abs : name_abs + name_len * 2].decode("utf-16le")
+            else:
+                stream_name = ""
+                        
             # Getting the attribute of STANDARD_INFORMATION
             if attribute_type_int == 0x10:
                 file_creation_time =  get_filetime_str(metadata,0x00)
@@ -358,10 +366,13 @@ def record_parser(record,record_index,record_location):
             if attribute_type_int == 0x80:
                 data_res = get_bytes(metadata,0x00,attribute_length)
 
-                record_obj.data = DataAttribute(
+                record_obj.data.append(DataAttribute(
                     resident=True,
+                    offset_data = (offset_to_metadata + offset),
+                    data_length = attribute_length,
+                    stream_name=stream_name,
                     data = data_res
-                )
+                ))
 
             if attribute_type_int == 0x90:
                pass 
@@ -382,6 +393,12 @@ def record_parser(record,record_index,record_location):
             initialized_data_size= get_int(attribute_header,0x38,0x40)
             attribute_name= get_int(attribute_header,0x40,2 * name_len)
             data_runs= get_runlist(attribute_header, offset_to_dataruns,attribute_length)
+
+            if name_len > 0:
+                name_abs = offset + offset_to_name
+                stream_name = record[name_abs : name_abs + name_len * 2].decode("utf-16le")
+            else:
+                stream_name = ""
             
 
             if attribute_type_int == 0x10:
@@ -428,8 +445,8 @@ def record_parser(record,record_index,record_location):
                 )
 
             if attribute_type_int == 0x80:
-                record_obj.data = NoneResidentHeader(
-                    resident=resident_flag,
+                record_obj.data.append(NoneResidentHeader(
+                    resident=False,
                     starting_vcn=starting_vcn,
                     last_vcn=last_vcn,
                     offset_to_dataruns=offset_to_dataruns,
@@ -439,8 +456,9 @@ def record_parser(record,record_index,record_location):
                     allocated_size_attribute=allocated_size_attribute,
                     initialized_data_size=initialized_data_size,
                     attribute_name=attribute_name,
-                    data_runs=data_runs
-                )
+                    data_runs=data_runs,
+                    stream_name=stream_name
+                ))
 
 
 

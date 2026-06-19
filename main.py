@@ -5,7 +5,9 @@ from textual.widgets import Header,Footer,Static,Label,DataTable,Select
 from textual.containers import Container,Horizontal,Vertical
 import os
 from models import TYPE_MAP,FLAGS_MFT,FILE_ATTRIBUTES,DataAttribute,NoneResidentHeader
-
+from textual.events import Key
+from pathlib import Path
+import re
 
 def parse(disk_path):
     #disk_path = "./fake-ntfs/disk.img"
@@ -109,6 +111,10 @@ def populate_del_list(partition,del_list,del_map):
 
             del_map.append(record)
 
+
+
+
+
 def populate_del_fil_list(partition, del_list, del_map):
     mft_records = partition.filesystem.mft_records
 
@@ -116,7 +122,6 @@ def populate_del_fil_list(partition, del_list, del_map):
     i_map = {}
     r_map = {}
 
-    # 1. Collect deleted records + split I / R
     for record in mft_records:
         if record.flags == 0:
             try:
@@ -133,40 +138,40 @@ def populate_del_fil_list(partition, del_list, del_map):
 
     used = set()
 
-    # 2. Match $I -> $R and assign display name
     for i_name, i_rec in i_map.items():
         r_name = "$R" + i_name[2:]
 
         if r_name in r_map and i_name not in used:
             r_rec = r_map[r_name]
 
-            # --- decode NTFS data (UTF-16LE) ---
-            raw = i_rec.data.data
-            path = raw.decode("utf-16le", errors="ignore")
+            # $I file holds the original path encoded as UTF-16LE
+            # it starts at byte 8 (first 8 bytes are recycle bin metadata)
+            raw = None
+            for stream in i_rec.data:
+                if stream.stream_name == "" and hasattr(stream, "data"):
+                    raw = stream.data
+                    break
 
-            # normalize Windows path
-            path = path.replace("\\", "/")
+            if raw:
+                # skip the 8-byte recycle bin header, rest is UTF-16LE path
+                path = raw[8:].decode("utf-16le", errors="ignore").rstrip("\x00")
+                path = path.replace("\\", "/")
+                r_rec.display_name = os.path.basename(path)
+            else:
+                r_rec.display_name = r_rec.file_name.filename if r_rec.file_name else r_name
 
-            # extract filename only
-            r_rec.display_name = os.path.basename(path)
-
-            # keep ONLY reconstructed R record
             del_map.append(r_rec)
             del_list.append(r_rec)
 
             used.add(i_name)
             used.add(r_name)
 
-    # 3. Add normal deleted files (non I/R)
     for record, name in deleted:
         if not name.startswith("$I") and not name.startswith("$R"):
-
             if not hasattr(record, "display_name"):
                 record.display_name = name
-
             del_map.append(record)
             del_list.append(record)
-
 
 
 def show_partition_metadata(partition):
@@ -246,29 +251,37 @@ def build_file_name(fn):
     )
 
 def build_data(data):
-
     if data is None:
         return "DATA\n────\nNone"
 
-    # ---------------- RESIDENT ----------------
-    if hasattr(data, "data"):
+    # Handle list (new format)
+    if isinstance(data, list):
+        if not data:
+            return "DATA\n────\nNone"
+        # show all streams
+        parts = []
+        for stream in data:
+            name = stream.stream_name if stream.stream_name else "<default>"
+            parts.append(f"[Stream: {name}]\n{_build_single_data(stream)}")
+        return "\n\n".join(parts)
 
+    return _build_single_data(data)
+
+
+def _build_single_data(data):
+    if hasattr(data, "data"):  # resident DataAttribute
         raw = data.data or b""
-
         try:
             text = raw.decode("utf-8", errors="replace")
         except:
             text = repr(raw)
-
         return (
             "DATA (RESIDENT)\n"
             "───────────────\n"
             f"{text}"
         )
 
-    # ---------------- NON RESIDENT ----------------
-    if hasattr(data, "data_runs"):
-
+    if hasattr(data, "data_runs"):  # non-resident
         lines = [
             "DATA (NON-RESIDENT)",
             "───────────────────",
@@ -277,18 +290,80 @@ def build_data(data):
             "",
             "RUN LIST:",
         ]
-
         for i, (lcn, length) in enumerate(data.data_runs):
             lines.append(f"{i}: LCN={lcn} LEN={length}")
-
         return "\n".join(lines)
 
     return f"DATA\n────\nUnknown type: {type(data).__name__}"
 
+def safe_name(name):
+    name = str(name)
+    name = name.split("\x00")[0]
+    return re.sub(r'[<>:"/\\|?*]', "_", name)
+
+
+
+
+
+def recover_nonresident_stream(disk, stream, partition, output_path):
+        cluster_size = partition.filesystem.cluster_size
+        partition_offset = int(partition.offset, 16)
+        real_size = stream.real_size_attribute  # don't write padding past this
+
+        written = 0
+
+        with open(output_path, "wb") as dst:
+            for lcn, length in stream.data_runs:
+                byte_offset = partition_offset + lcn * cluster_size
+                run_bytes = length * cluster_size
+
+                disk.seek(byte_offset)
+                data = disk.read(run_bytes)
+
+                # last run may be padded - trim to real file size
+                remaining = real_size - written
+                if len(data) > remaining:
+                    data = data[:remaining]
+
+                dst.write(data)
+                written += len(data)
+
+                if written >= real_size:
+                    break
+
+def recover_record(disk, record, partition, partition_dir):
+    base_name = safe_name(
+        getattr(record, "display_name", None) or f"record_{record.record_number}"
+    )
+
+    for stream in record.data:
+        # pick output filename
+        if stream.stream_name:
+            out_name = f"{base_name}__{stream.stream_name}"
+        else:
+            out_name = base_name
+
+        output_path = f"{partition_dir}/{out_name}"
+
+        if stream.resident:   
+            with open(output_path, "wb") as f:
+                    f.write(stream.data)
+
+        else:  # non-resident
+            if hasattr(stream, "data_runs") and stream.data_runs:
+                recover_nonresident_stream(disk, stream, partition, output_path)
+
+
+
+
+
+
+
+
 
 class recov3rApp(App):
-    ansi_color = None
-    CSS_PATH = "styles.tcss"
+    ansi_color = True
+    CSS_PATH = "styles6.tcss"
 
     def on_mount(self):
         self.partitions = []
@@ -303,6 +378,8 @@ class recov3rApp(App):
         self.del_map_filtered = []
 
         self.cache = {}
+
+        self.disk_path = None
 
     # ================= CACHE BUILDER =================
     def build_partition_cache(self, index):
@@ -341,7 +418,8 @@ class recov3rApp(App):
 
         yield Vertical(
             Container(
-                Select([(img, img) for img in get_imgs()], prompt="Choose disk image")
+                Select([(img, img) for img in get_imgs()], prompt="Choose disk image"),
+                id="select_container",
             ),
 
             Horizontal(
@@ -359,6 +437,7 @@ class recov3rApp(App):
     @on(Select.Changed)
     def select_changed(self, event: Select.Changed) -> None:
         disk_path = event.value
+        self.disk_path = disk_path
 
         if not disk_path or disk_path == Select.NULL:
             return
@@ -467,6 +546,39 @@ class recov3rApp(App):
             self.metadata.remove_children()
             self.metadata.mount(build_metadata_view(entry))
 
+
+
+
+
+    
+
+    @on(Key)
+    def on_key(self, event: Key):
+        if event.key.lower() != "o":
+            return
+
+        recovered_dir = f"./{self.disk_path}_Recovered"
+        os.makedirs(recovered_dir, exist_ok=True)
+
+        with open(self.disk_path, "rb") as disk:
+            for partition_index in range(len(self.partitions)):
+                self.build_partition_cache(partition_index)
+
+                rec_map = self.cache[partition_index]["rec_map"]
+                partition = self.partitions[partition_index]
+
+                partition_dir = f"{recovered_dir}/Partition_{partition_index}"
+                os.makedirs(partition_dir, exist_ok=True)
+
+                for record in rec_map:
+                    for stream in record.data:
+                        self.notify(f"{getattr(record, 'display_name', '?')} | resident={stream.resident} | has_data={hasattr(stream, 'data')} | data={getattr(stream, 'data', None)}")
+
+                    try:
+                        recover_record(disk, record, partition, partition_dir)
+                        self.notify(f"Recovered: {getattr(record, 'display_name', record.record_number)}")
+                    except Exception as e:
+                        self.notify(f"Error on record {record.record_number}: {e}")
 
 if __name__ == "__main__":
     app = recov3rApp()
