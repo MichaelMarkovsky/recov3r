@@ -364,7 +364,7 @@ def recover_record(disk, record, partition, partition_dir):
 
 class recov3rApp(App):
     ansi_color = True
-    CSS_PATH = "styles6.tcss"
+    CSS_PATH = "styles_v2_transparent.tcss"
     BINDINGS = [
         ("o", "recover", "Recover Disk"),
         ("q", "quit", "Quit"),
@@ -426,8 +426,7 @@ class recov3rApp(App):
     # ================= UI =================
     def compose(self) -> ComposeResult:
         self.metadata = Container(id="metadata")
-        self.footer = Footer(id="footer")
-
+        
         yield Vertical(
             Container(
                 Select([(img, img) for img in get_imgs()], prompt="Choose disk image"),
@@ -443,8 +442,8 @@ class recov3rApp(App):
             ),
 
             self.metadata,
-            self.footer
-        )
+            Footer(),
+       )
 
     # ================= LOAD DISK =================
     @on(Select.Changed)

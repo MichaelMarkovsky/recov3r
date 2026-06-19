@@ -1,0 +1,282 @@
+/* =========================
+   VERSION 2 — FULL TRANSPARENT
+   竜 recov3rApp
+   ========================= */
+
+Screen {
+    background: transparent;
+}
+
+* {
+    background: ansi_default;
+    scrollbar-background: ansi_default;
+    scrollbar-background-hover: ansi_default;
+    scrollbar-background-active: ansi_default;
+    scrollbar-color: gray;
+    scrollbar-color-hover: white;
+}
+
+/* =========================
+   ROOT
+   ========================= */
+Vertical {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: ansi_default;
+}
+
+Horizontal, Container {
+    margin: 0;
+    padding: 0;
+    background: ansi_default;
+}
+
+/* =========================
+   SELECT BAR
+   ========================= */
+#select_container {
+    height: 3;
+    margin: 1 1 0 1;
+    padding: 0;
+    background: ansi_default;
+}
+
+Select {
+    height: 3;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: ansi_default;
+    border: round gray;
+}
+
+Select.-valid {
+    background: ansi_default;
+    border: none;
+}
+
+Select.-valid > SelectCurrent {
+    background: ansi_default;
+    border: none;
+}
+
+SelectCurrent {
+    background: ansi_default;
+    border: round gray;
+    color: ansi_default;
+    padding: 0 1;
+    &:ansi {
+        background: ansi_default;
+        border: none;
+        color: ansi_default;
+    }
+    Static#label {
+        background: ansi_default;
+        color: ansi_default;
+    }
+    .arrow {
+        background: ansi_default;
+        color: ansi_default;
+    }
+}
+
+Select:focus > SelectCurrent {
+    border: none;
+    background: ansi_default;
+    color: ansi_cyan;
+}
+
+Select > SelectOverlay {
+    background: ansi_default;
+    border: round gray;
+    color: ansi_default;
+    &:focus {
+        background: ansi_default;
+    }
+    & > .option-list--option {
+        background: ansi_default;
+        color: ansi_default;
+    }
+    & > .option-list--option-highlighted {
+        background: ansi_bright_black;
+        color: ansi_default;
+    }
+    & > .option-list--option-selected {
+        background: ansi_bright_black;
+        color: ansi_default;
+    }
+}
+
+OptionList {
+    background: ansi_default;
+    color: ansi_default;
+    border: round gray;
+}
+
+/* =========================
+   TABLES ROW
+   ========================= */
+.tables {
+    height: 1fr;
+    margin: 1 1 0 1;
+    padding: 0;
+    background: ansi_default;
+}
+
+DataTable {
+    height: 100%;
+    border: round gray;
+    background: ansi_default;
+    color: ansi_default;
+}
+
+DataTable:focus {
+    border: round ansi_cyan;
+}
+
+DataTable > .datatable--cursor {
+    background: ansi_bright_black;
+    color: ansi_white;
+}
+
+DataTable > .datatable--hover {
+    background: ansi_default;
+    color: ansi_white;
+}
+
+DataTable > .datatable--header {
+    background: ansi_default;
+    color: ansi_cyan;
+    text-style: bold;
+}
+
+DataTable > .datatable--header-hover {
+    background: ansi_default;
+    color: ansi_cyan;
+}
+
+DataTable > .datatable--even-row {
+    background: ansi_default;
+}
+
+DataTable > .datatable--odd-row {
+    background: ansi_default;
+}
+
+#table_partitions {
+    width: 18%;
+    border-title-align: center;
+}
+
+#table_mft {
+    width: 46%;
+    border-title-align: center;
+}
+
+#table_deleted {
+    width: 18%;
+    border-title-align: center;
+}
+
+#table_del_final {
+    width: 18%;
+    border-title-align: center;
+}
+
+/* =========================
+   METADATA AREA
+   ========================= */
+#metadata {
+    height: 12;
+    margin: 1 1 0 1;
+    padding: 0;
+    background: ansi_default;
+}
+
+#metadata Horizontal {
+    height: 100%;
+    background: ansi_default;
+}
+
+#partition_meta {
+    width: 1fr;
+    border: round ansi_cyan;
+    padding: 1;
+    background: ansi_default;
+}
+
+.meta_title {
+    text-align: center;
+    text-style: bold;
+    padding-bottom: 1;
+    background: ansi_default;
+    color: ansi_default;
+}
+
+.meta_body {
+    padding-left: 2;
+    color: ansi_default;
+    background: ansi_default;
+}
+
+/* =========================
+   FILE METADATA PANELS
+   ========================= */
+#meta_left,
+#meta_middle,
+#meta_right {
+    border: solid gray;
+    padding: 1;
+    width: 1fr;
+    height: 100%;
+    overflow-y: auto;
+    background: ansi_default;
+}
+
+#meta_right {
+    width: 2fr;
+}
+
+Static {
+    background: ansi_default;
+    color: ansi_default;
+}
+
+Label {
+    background: ansi_default;
+    color: ansi_default;
+}
+
+.meta_panel_title {
+    text-style: bold underline;
+    color: ansi_cyan;
+    background: ansi_default;
+    margin-bottom: 1;
+}
+
+/* =========================
+   FOOTER
+   ========================= */
+#footer {
+    height: 1;
+    background: ansi_default;
+    color: ansi_default;
+    border-top: solid gray;
+    padding: 0 2;
+    content-align: right middle;
+}
+
+/* =========================
+   LABELS
+   ========================= */
+.deleted {
+    color: ansi_red;
+    text-style: bold;
+    background: ansi_default;
+}
+
+.recovered {
+    color: ansi_green;
+    background: ansi_default;
+}
