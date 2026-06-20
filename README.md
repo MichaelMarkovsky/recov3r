@@ -70,7 +70,7 @@ Recovered files are stored per partition:
 ### Clone repository
 
 ```bash
-git clone https://github.com/your-username/recov3r.git
+git clone https://github.com/MichaelMarkovsky/recov3r.git
 cd recov3r
 ```
 
