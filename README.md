@@ -44,7 +44,7 @@ https://github.com/user-attachments/assets/775e470b-bc3f-437b-8263-941a9f7e14bf
 
 ### Deleted File Recovery
 Detects deleted files by analyzing MFT record flags and reconstructs recoverable data using NTFS metadata.  
-Supports full recovery of all deleted files with a single action and organizes output into structured partition-based folders.
+Supports full recovery of all deleted files with a single action by pressing `o` and organizes output into structured partition-based folders.
 
 It also supports recovery of files removed via Windows (including Recycle Bin artifacts where metadata is available).
 
