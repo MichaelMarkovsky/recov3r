@@ -2,7 +2,9 @@
 
 > A Python-based TUI application for parsing NTFS filesystems, inspecting MFT records, and recovering deleted data from disk structures.
 
-https://github.com/user-attachments/assets/775e470b-bc3f-437b-8263-941a9f7e14bf
+
+https://github.com/user-attachments/assets/5ef25e16-d5ff-4453-b5e2-e16128123e30
+
 
 **Research Notes :**  https://michaelmarkovsky.com/blog/recov3r/
 
