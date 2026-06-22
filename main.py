@@ -375,7 +375,7 @@ class recov3rApp(App):
         self.query_one("#table_partitions").border_title = "Partitions"
         self.query_one("#table_mft").border_title = "$MFT"
         self.query_one("#table_deleted").border_title = "Deleted Files"
-        self.query_one("#table_del_final").border_title = "Deleted Reconstracted Files"
+        self.query_one("#table_del_final").border_title = "Deleted Reconstructed Files"
 
         self.partitions = []
 
