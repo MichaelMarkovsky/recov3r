@@ -87,7 +87,8 @@ Run
 python main.py
 ```
 
-## Disclaimer This tool is intended for: 
+## Disclaimer 
+This tool is intended for: 
 - Educational purposes
 - Digital forensics research
 - NTFS filesystem analysis Use responsibly.
